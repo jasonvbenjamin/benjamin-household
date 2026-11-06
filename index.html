@@ -682,7 +682,9 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     ['home', 'Home & loans', (d) => ['Home', 'Loans'].includes(d.category)],
     ['stmt', 'Statements', (d) => /statements/i.test(d.category)],
   ];
-  const ORDER = ['LLC formation', 'LLC filings', 'Taxes 2025', 'Loans', 'Home', 'Bank & card statements'];
+  const ORDER = ['LLC formation', 'LLC filings', 'Taxes', 'Taxes: IRS letters', 'Taxes: IRS transcripts', 'Past businesses', 'Loans', 'Home', 'Other records', 'Bank & card statements'];
+  // Tax years sort newest first, between the LLC papers and the IRS letters.
+  const catRank = (c) => { const m = /^Taxes (\d{4})$/.exec(c); if (m) return 200 + (3000 - Number(m[1])) / 10000; const i = ORDER.indexOf(c); return i < 0 ? 900 : i * 100; };
   const st = { group: 'all', q: '' };
   let built = false;
   function buildDocs() {
@@ -707,7 +709,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const g = GROUPS.find((x) => x[0] === st.group)[2];
     const hits = docs.filter(g).filter((d) => !st.q || (d.title + ' ' + (d.summary || '') + ' ' + d.category + ' ' + (d.source || '') + ' ' + (d.doc_date || '')).toLowerCase().includes(st.q));
     if (!hits.length) { list.replaceChildren(el('p', 'bf-empty', 'Nothing matches.')); return; }
-    const cats = [...new Set(hits.map((d) => d.category))].sort((a, b) => (ORDER.indexOf(a) + 99) % 99 - (ORDER.indexOf(b) + 99) % 99);
+    const cats = [...new Set(hits.map((d) => d.category))].sort((a, b) => catRank(a) - catRank(b) || a.localeCompare(b));
     const out = [];
     cats.forEach((c) => {
       const rows = hits.filter((d) => d.category === c).sort((a, b) => (b.doc_date || '').localeCompare(a.doc_date || ''));
@@ -763,7 +765,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
   const tel = (p) => { const d = (p || '').replace(/\D/g, '').slice(0, 10); return d.length === 10 ? 'tel:+1' + d : null; };
   const place = (r) => [r.city, r.state].filter(Boolean).join(', ');
   const street = (r) => r.address + (r.unit ? ', Unit ' + r.unit : '');
-  const resText = (r) => [street(r) + ', ' + place(r), when(r) + (r.rent ? ' · Rent ' + money(r.rent) + '/mo' : ''), r.landlord ? 'Landlord: ' + [r.landlord, phone(r.landlord_phone), r.landlord_email].filter(Boolean).join(' · ') : ''].filter(Boolean).join('\n');
+  const resText = (r) => [street(r) + ', ' + place(r), when(r) + (r.rent ? ' · Rent ' + money(r.rent) + '/mo' + (r.parking ? ', plus ' + money(r.parking) + '/mo parking' : '') : ''), r.landlord ? 'Landlord: ' + [r.landlord, phone(r.landlord_phone), r.landlord_email].filter(Boolean).join(' · ') : ''].filter(Boolean).join('\n');
   const jobText = (r) => [r.title + ', ' + r.employer, [r.address, place(r)].filter(Boolean).join(', '), when(r)].filter(Boolean).join('\n');
   const COPY = 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z';
   async function copyText(text, row, okMsg) {
@@ -800,7 +802,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const d = dur(r); if (d) w.append(el('span', 'r', d));
     const main = el('div', 'rc-main');
     if (k === 'res') {
-      main.append(el('div', 'rc-title', street(r)), el('div', 'rc-meta', place(r) + (r.rent ? ' · ' + money(r.rent) + '/mo' : '')));
+      main.append(el('div', 'rc-title', street(r)), el('div', 'rc-meta', place(r) + (r.rent ? ' · ' + money(r.rent) + '/mo' + (r.parking ? ' + ' + money(r.parking) + ' parking' : '') : '')));
       if (r.landlord) {
         const ll = el('div', 'rc-meta rc-ll'); ll.append('Landlord: ' + r.landlord);
         if (r.landlord_phone) { ll.append(' · '); const a = el(tel(r.landlord_phone) ? 'a' : 'span', null, phone(r.landlord_phone)); if (a.tagName === 'A') a.href = tel(r.landlord_phone); ll.appendChild(a); }
