@@ -481,6 +481,15 @@ body { font: 14px/1.4 "Google Sans BF", "Roboto BF", Roboto, system-ui, -apple-s
 textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
 @media(max-width:700px){.rc-hrow{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"when acts" "main main"}.rc-hrow .rc-when{grid-area:when}.rc-hrow .rc-main{grid-area:main}.rc-hrow .rc-acts{grid-area:acts}.rc-hrow .rc-when{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}}
 .rc-alink{text-decoration:none}
+#move-card .mv-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;line-height:18px;color:var(--g-text-2);margin:4px 0 8px}
+#move-card .mv-key{display:inline-flex;align-items:center;gap:6px}
+#move-card .mv-sw{width:14px;height:3px;border-radius:2px;display:inline-block}
+#move-card .mv-bofa{margin:4px 0 12px}
+#move-card .mv-table td.num{font-family:var(--g-num);font-variant-numeric:tabular-nums}
+#move-card .mv-table td .bf-chip{height:22px}
+#move-card .bf-cardhead{min-width:0}
+#move-card .mv-kpis{grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5rem),1fr))}
+@media(max-width:700px){#move-card .mv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#move-card .mv-kpis .v{font-size:22px;line-height:28px}}
 </style>
 <script>
 (() => {
@@ -897,7 +906,119 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     rd.append(h2, b2);
     wrap.prepend(dl, rd);
   }
-  const render = () => { const first = !$('rc-views'); buildDocs(); buildHistory(); buildViews(); if (first && $('rc-views')) setView(view0); buildLlc(); renderDocs(); renderHistory(); countViews(); renderDeadlines(); renderLlcDocs(); };
+  // ---- Overview: Chicago move budget and cash through March ----
+  const MV_END = new Date(2027, 2, 31, 12);
+  const toD = (s) => new Date(s + 'T12:00:00');
+  const signed = (n) => (n < 0 ? '−' : '+') + money(Math.abs(n));
+  const cash = (n) => (n < 0 ? '−' : '') + money(Math.abs(n));
+  const short = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  function mvEvents(sched, from, to) {
+    const out = [];
+    sched.forEach((e) => {
+      if (e.cadence === 'biweekly' && e.anchor_date) { for (let d = toD(e.anchor_date); d <= to; d = new Date(d.getTime() + 14 * 864e5)) if (d > from) out.push({ ...e, d }); }
+      else if (e.cadence === 'once' && e.anchor_date) { const d = toD(e.anchor_date); if (d > from && d <= to) out.push({ ...e, d }); }
+      else if (e.day_of_month) {
+        for (let m = new Date(from.getFullYear(), from.getMonth(), 1, 12); m <= to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1, 12)) {
+          const last = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate(); const d = new Date(m.getFullYear(), m.getMonth(), Math.min(e.day_of_month, last), 12);
+          if (d > from && d <= to) out.push({ ...e, d });
+        }
+      }
+    });
+    return out.sort((a, b) => a.d - b.d || b.amount - a.amount);
+  }
+  const mvKind = (r) => r.amount > 0 ? 'back' : /^Chicago rent \+ parking/.test(r.name) ? 'rent' : /^(Russell rent|Parking, Los Feliz)/.test(r.name) ? 'la' : 'move';
+  function buildMove() {
+    const fc = $('forecast-card'); if (!fc || $('move-card')) return;
+    const card = el('div', 'bf-card'); card.id = 'move-card';
+    const head = el('div', 'bf-cardhead');
+    const h = el('div'); h.append(el('span', 'bf-eyebrow', 'Through March'), el('h3', null, 'Chicago move'), el('span', 'bf-note mv-note', ''));
+    head.appendChild(h);
+    const kp = el('div', 'bf-kpis rc-kpis mv-kpis');
+    const chart = el('div', 'bf-chart mv-chart'); chart.style.minHeight = '240px';
+    const legend = el('div', 'mv-legend');
+    const tw = el('div', 'bf-tablewrap short'); const t = el('table', 'bf-table mv-table');
+    const th = el('thead'); const tr = el('tr'); [['Date', 'datec'], ['What', null], ['Amount', 'num'], ['', null]].forEach(([x, c]) => tr.appendChild(el('th', c, x))); th.appendChild(tr);
+    t.append(th, el('tbody')); tw.appendChild(t);
+    const bofa = el('p', 'bf-note mv-bofa', '');
+    card.append(head, kp, chart, legend, bofa, tw);
+    fc.parentNode.insertBefore(card, fc.nextSibling);
+  }
+  function renderMove() {
+    const card = $('move-card'); if (!card) return;
+    const sched = ok('schedule'), accts = ok('accounts');
+    if (!sched || !accts) return;
+    const chk = accts.find((a) => a.name === 'Chase checking'), sav = accts.find((a) => a.name === 'Chase savings'), bofa = accts.find((a) => /Bank of America/.test(a.name));
+    if (!chk || chk.balance == null) return;
+    const from = toD(chk.as_of), today = new Date(); today.setHours(12, 0, 0, 0);
+    const ev = mvEvents(sched, from, MV_END).map((e) => ({ ...e, acct: 'checking' }));
+    let payoff = null;
+    if (bofa && bofa.balance > 0 && bofa.promo_ends_on) {
+      const pd = new Date(toD(bofa.promo_ends_on).getTime() - 5 * 864e5);
+      if (pd > from && pd <= MV_END) { payoff = { d: pd, amount: -bofa.balance, name: 'Bank of America payoff, from savings', acct: 'savings' }; ev.push(payoff); ev.sort((a, b) => a.d - b.d || b.amount - a.amount); }
+    }
+    let c = Number(chk.balance), s = Number(sav ? sav.balance : 0);
+    const pts = [{ d: from, c, t: c + s }]; let lowC = pts[0], lowT = pts[0];
+    ev.forEach((e) => { if (e.acct === 'savings') s += e.amount; else c += e.amount; const p = { d: e.d, c, t: c + s, e }; pts.push(p); if (p.c < lowC.c) lowC = p; if (p.t < lowT.t) lowT = p; });
+    pts.push({ d: MV_END, c, t: c + s });
+    // budget
+    const rows = sched.filter((r) => r.tag === 'move').sort((a, b) => (a.anchor_date || '').localeCompare(b.anchor_date || ''));
+    const sum = (k) => rows.filter((r) => mvKind(r) === k).reduce((x, r) => x + r.amount, 0);
+    const oneTime = -sum('move'), back = sum('back'), ballpark = rows.filter((r) => r.is_estimate && mvKind(r) === 'move').length;
+    card.querySelector('.mv-note').textContent = 'Ballpark until the quotes come back' + (ballpark ? ` (${ballpark} lines still estimated)` : '') + '. Starts from the ' + day(chk.as_of) + ' balances of checking and savings and plays every bill, paycheck and move cost forward to March 31.';
+    const kpi = (l, v, sub, cls) => { const k = el('div', 'bf-kpi rc-kpi' + (cls ? ' ' + cls : '')); k.append(el('span', 'l', l), el('span', 'v', v)); if (sub) k.appendChild(el('span', 's', sub)); return k; };
+    card.querySelector('.mv-kpis').replaceChildren(
+      kpi('Move costs', money(oneTime), 'Deposit, half month, movers, car, travel, move-in'),
+      kpi('Coming back', money(back), 'Russell and parking deposits'),
+      kpi('Checking at its lowest', cash(lowC.c), short(lowC.d) + (lowC.c < 0 ? ': move money from savings before then' : ''), lowC.c < 0 ? 'bad' : ''),
+      kpi('With savings, lowest', cash(lowT.t), short(lowT.d) + (payoff && lowT.d >= payoff.d ? ', after paying off Bank of America' : ''), lowT.t < 2000 ? 'bad' : ''),
+    );
+    card.querySelector('.mv-bofa').textContent = bofa && bofa.balance > 0 ? `Bank of America: ${money(bofa.balance)} at 0% until ${day(bofa.promo_ends_on)}, then ${(bofa.apr * 100).toFixed(2)}%. The chart pays it off from savings on ${short(payoff ? payoff.d : toD(bofa.promo_ends_on))}. Decide in late January, once the move is paid: pay it off, or move it to a card you already have.` : '';
+    const tb = card.querySelector('.mv-table tbody');
+    tb.replaceChildren(...rows.map((r) => {
+      const trr = el('tr'); const k = mvKind(r);
+      const what = el('td', null, r.name.replace(/ \(move ballpark\)/, ''));
+      const chip = el('span', 'bf-chip' + (k === 'back' ? ' ok' : r.is_estimate ? '' : ' info'), k === 'back' ? 'Coming back' : r.is_estimate ? 'Ballpark' : 'Set'); if (r.note) chip.title = r.note;
+      const cc = el('td'); cc.appendChild(chip);
+      trr.append(el('td', 'datec', r.anchor_date ? short(toD(r.anchor_date)) : ''), what, el('td', 'num' + (r.amount > 0 ? ' bf-pos' : ''), signed(r.amount)), cc);
+      return trr;
+    }));
+    // chart
+    const box = card.querySelector('.mv-chart'); box.replaceChildren();
+    const W = box.clientWidth || 700, H = 240, B = 26;
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Checking and savings through March');
+    const lo = Math.min(0, d3.min(pts, (p) => p.c)), hi = d3.max(pts, (p) => p.t);
+    const y = d3.scaleLinear([lo, hi], [H - B, 14]).nice(); const ticks = y.ticks(5); const left = BF.leftMargin(svg, ticks); BF.yAxis(svg, y, ticks, left, W);
+    const x = d3.scaleTime([from, MV_END], [left + 6, W - 8]);
+    svg.append('g').selectAll('text').data(x.ticks(d3.timeMonth.every(1))).join('text').attr('x', (d) => x(d)).attr('y', H - 6).attr('text-anchor', 'middle').attr('font-size', 12).attr('fill', 'var(--g-text-2)').text((d) => d.toLocaleDateString('en-US', { month: 'short' }));
+    if (lo < 0) svg.append('rect').attr('x', left).attr('width', W - left).attr('y', y(0)).attr('height', y(lo) - y(0)).attr('fill', 'var(--g-error)').attr('opacity', 0.07);
+    const line = (k) => d3.line().x((p) => x(p.d)).y((p) => y(p[k])).curve(d3.curveStepAfter);
+    svg.append('path').datum(pts).attr('d', line('t')).attr('fill', 'none').attr('stroke', 'var(--g-s2)').attr('stroke-width', 2.25);
+    svg.append('path').datum(pts).attr('d', line('c')).attr('fill', 'none').attr('stroke', 'var(--g-s1)').attr('stroke-width', 2.25);
+    if (today > from && today < MV_END) svg.append('line').attr('x1', x(today)).attr('x2', x(today)).attr('y1', 10).attr('y2', H - B).attr('stroke', 'var(--g-text-2)').attr('stroke-dasharray', '3 3');
+    if (payoff) { svg.append('line').attr('x1', x(payoff.d)).attr('x2', x(payoff.d)).attr('y1', 12).attr('y2', H - B).attr('stroke', 'var(--g-outline-strong)'); const pr = x(payoff.d) > W - 160; svg.append('text').attr('class', 'lbl-halo').attr('x', x(payoff.d) + (pr ? -4 : 4)).attr('y', 24).attr('text-anchor', pr ? 'end' : 'start').attr('font-size', 11).attr('fill', 'var(--g-text-2)').text('Bank of America paid off'); }
+    const mark = (p, k, color, label, below) => {
+      svg.append('circle').attr('cx', x(p.d)).attr('cy', y(p[k])).attr('r', 4.5).attr('fill', color).attr('stroke', 'var(--g-card)').attr('stroke-width', 2);
+      const right = x(p.d) > W - 170;
+      svg.append('text').attr('class', 'lbl-halo').attr('x', x(p.d) + (right ? -8 : 8)).attr('y', y(p[k]) + (below ? 16 : -8)).attr('text-anchor', right ? 'end' : 'start').attr('font-size', 12).attr('font-weight', 500).attr('fill', p[k] < 0 ? 'var(--g-error)' : 'var(--g-text)').text(label + ' ' + cash(p[k]) + ' · ' + short(p.d));
+    };
+    mark(lowC, 'c', lowC.c < 0 ? 'var(--g-error)' : 'var(--g-s1)', 'Checking low', true);
+    if (lowT !== lowC) mark(lowT, 't', 'var(--g-s2)', 'With savings', false);
+    const tip = BF.tip(box);
+    svg.append('rect').attr('x', left).attr('width', W - left).attr('y', 0).attr('height', H - B).attr('fill', 'transparent')
+      .on('mousemove', (evt) => {
+        const [mx, my] = d3.pointer(evt, box); const at = x.invert(d3.pointer(evt, svg.node())[0]);
+        const p = pts.filter((q) => q.d <= at).pop() || pts[0];
+        const same = ev.filter((e) => e.d.toDateString() === at.toDateString());
+        BF.tipRows(tip, at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), [['var(--g-s1)', 'Checking', cash(p.c)], ['var(--g-s2)', 'Checking + savings', cash(p.t)], ...same.map((e) => [e.amount > 0 ? 'var(--gc-wages)' : 'var(--g-text-2)', e.name.replace(/ \(move ballpark\)/, ''), signed(e.amount)])]);
+        BF.placeTip(box, tip, mx, my);
+      })
+      .on('mouseleave', () => { tip.hidden = true; });
+    const lg = card.querySelector('.mv-legend'); lg.replaceChildren();
+    [['var(--g-s1)', 'Checking'], ['var(--g-s2)', 'Checking + savings']].forEach(([col, lab]) => { const i = el('span', 'mv-key'); const sw = el('span', 'mv-sw'); sw.style.background = col; i.append(sw, lab); lg.appendChild(i); });
+  }
+  let mvResize; window.addEventListener('resize', () => { clearTimeout(mvResize); mvResize = setTimeout(renderMove, 200); });
+
+  const render = () => { buildMove(); renderMove(); const first = !$('rc-views'); buildDocs(); buildHistory(); buildViews(); if (first && $('rc-views')) setView(view0); buildLlc(); renderDocs(); renderHistory(); countViews(); renderDeadlines(); renderLlcDocs(); };
   dash.onData(render);
 })();
 </script></template>
