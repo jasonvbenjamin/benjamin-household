@@ -999,7 +999,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const mark = (p, k, color, label, below) => {
       svg.append('circle').attr('cx', x(p.d)).attr('cy', y(p[k])).attr('r', 4.5).attr('fill', color).attr('stroke', 'var(--g-card)').attr('stroke-width', 2);
       const right = x(p.d) > W - 170;
-      svg.append('text').attr('class', 'lbl-halo').attr('x', x(p.d) + (right ? -8 : 8)).attr('y', y(p[k]) + (below ? 16 : -8)).attr('text-anchor', right ? 'end' : 'start').attr('font-size', 12).attr('font-weight', 500).attr('fill', p[k] < 0 ? 'var(--g-error)' : 'var(--g-text)').text(label + ' ' + cash(p[k]) + ' · ' + short(p.d));
+      svg.append('text').attr('class', 'lbl-halo').attr('x', x(p.d) + (right ? -8 : 8)).attr('y', y(p[k]) + (below && y(p[k]) + 16 < H - B - 14 ? 16 : -10)).attr('text-anchor', right ? 'end' : 'start').attr('font-size', 12).attr('font-weight', 500).attr('fill', p[k] < 0 ? 'var(--g-error)' : 'var(--g-text)').text(label + ' ' + cash(p[k]) + ' · ' + short(p.d));
     };
     mark(lowC, 'c', lowC.c < 0 ? 'var(--g-error)' : 'var(--g-s1)', 'Checking low', true);
     if (lowT !== lowC) mark(lowT, 't', 'var(--g-s2)', 'With savings', false);
