@@ -423,6 +423,47 @@ body { font: 14px/1.4 "Google Sans BF", "Roboto BF", Roboto, system-ui, -apple-s
 .rc-dlbody{display:grid;gap:10px;padding:4px 0 16px;max-width:80ch}
 .rc-dlbody p{margin:0;font-size:14px;line-height:20px}
 .rc-dlbody .bf-btn{justify-self:start;text-decoration:none;margin:0}
+.rc-viewer{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.56);display:grid;place-items:center;padding:16px;box-sizing:border-box;font-family:var(--g-font);color:var(--g-text)}
+.rc-vpanel{width:min(1100px,100%);height:100%;max-height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--g-card);border-radius:16px;overflow:hidden;box-shadow:0 8px 12px 6px rgba(0,0,0,.15),0 4px 4px rgba(0,0,0,.3)}
+.rc-vhead{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 16px;padding:12px 12px 12px 24px;border-bottom:1px solid var(--g-grid)}
+.rc-vttl{display:grid;gap:2px;min-width:0}
+.rc-vttl .rc-title{font-size:16px;line-height:24px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc-vtools{display:flex;align-items:center;gap:8px}
+.rc-vmsg{grid-column:1/-1}
+.rc-vmsg:empty{display:none}
+.rc-vmsg .rc-msg{margin:0}
+.rc-ib{appearance:none;border:0;background:transparent;color:var(--g-text-2);width:40px;height:40px;border-radius:20px;display:inline-grid;place-items:center;cursor:pointer;padding:0;flex:none}
+.rc-ib:hover{background:var(--g-hover);color:var(--g-text)}
+.rc-ib:focus-visible,.rc-vtools .rc-act:focus-visible{outline:2px solid var(--g-primary);outline-offset:2px}
+.rc-zoom{display:inline-flex;align-items:center;gap:0;border:1px solid var(--g-outline-strong);border-radius:20px;height:40px;box-sizing:border-box}
+.rc-zoom[hidden]{display:none}
+.rc-zoom .rc-ib{width:38px;height:38px}
+.rc-zl{min-width:3.25rem;text-align:center;font:500 13px/20px var(--g-num);font-variant-numeric:tabular-nums;color:var(--g-text)}
+.rc-vbody{overflow:auto;background:var(--g-surface-2);outline:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.rc-pages{display:grid;justify-items:center;gap:16px;padding:16px;min-width:min-content}
+.rc-page{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3),0 1px 3px 1px rgba(0,0,0,.15);border-radius:2px;overflow:hidden}
+.rc-page canvas{display:block;width:100%;height:100%}
+.rc-vimg{display:block;max-width:100%;height:auto;margin:16px auto;background:#fff}
+.rc-vnote{margin:0;padding:48px 24px;text-align:center;font-size:14px;line-height:20px;color:var(--g-text-2)}
+.rc-vnote.err{color:var(--g-error)}
+.rc-vsheetwrap{display:grid;gap:12px;padding:16px;align-content:start}
+.rc-vsheetwrap>.bf-seg{justify-self:start}
+.rc-vsheet{overflow:auto;background:var(--g-card);border:1px solid var(--g-grid);border-radius:12px}
+.rc-vbody>.rc-vsheet{margin:16px}
+.rc-vtable{--cp:16px;width:auto;min-width:100%}
+.rc-vtable td{white-space:nowrap;font-variant-numeric:tabular-nums}
+.rc-vtable td.num{font-family:var(--g-num)}
+@media(max-width:700px){
+  .rc-viewer{padding:0}
+  .rc-vpanel{width:100%;border-radius:0;box-shadow:none}
+  .rc-vhead{grid-template-columns:minmax(0,1fr) auto;padding:8px 4px 8px 16px;padding-top:max(8px,env(safe-area-inset-top))}
+  .rc-vtools{gap:4px}
+  .rc-vtools .rc-act{padding:0;width:40px;height:40px;min-height:40px;justify-content:center;border:0;border-radius:20px;color:var(--g-text-2)}
+  .rc-vtools .rc-act .rc-lbl{display:none}
+  .rc-zoom{position:fixed;z-index:2;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--g-card);border-color:var(--g-outline);box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 8px 3px rgba(0,0,0,.15);height:44px}
+  .rc-zoom .rc-ib{width:42px;height:42px}
+  .rc-pages{padding:8px 8px 76px;gap:8px}
+}
 @media(max-width:700px){.rc-dl summary{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"when chip" "what what" "amt amt"}.rc-when{grid-area:when}.rc-what{grid-area:what}.rc-amt{grid-area:amt;text-align:left}.rc-dl .bf-chip{grid-area:chip}.rc-amt:empty{display:none}}
 </style>
 <script>
@@ -444,11 +485,144 @@ body { font: 14px/1.4 "Google Sans BF", "Roboto BF", Roboto, system-ui, -apple-s
 
   // ---- file actions ----
   const say = (row, text, isErr) => { let m = row.querySelector('.rc-msg'); if (!m) { m = el('div', 'rc-msg'); row.appendChild(m); } m.className = 'rc-msg' + (isErr ? ' err' : ''); m.textContent = text; if (!isErr) setTimeout(() => { if (m.textContent === text) m.remove(); }, 6000); };
-  async function view(d, row) {
-    const w = window.open('', '_blank');
-    try { const u = await dash.vault.url(d.storage_path, { expires: 600 }); if (w) w.location.href = u; else location.href = u; }
-    catch (e) { if (w) w.close(); say(row, 'Couldn’t open it: ' + (e.message || e), true); }
+  // ---- viewer: opens the file inside the dashboard ----
+  const LIB = {
+    pdf: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', () => window.pdfjsLib],
+    xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => window.XLSX],
+  };
+  const libs = {};
+  const need = (k) => libs[k] || (libs[k] = new Promise((res, rej) => {
+    if (LIB[k][1]()) return res(LIB[k][1]());
+    const s = document.createElement('script'); s.src = LIB[k][0]; s.async = true;
+    s.onload = () => { const g = LIB[k][1](); if (k === 'pdf') g.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(g); };
+    s.onerror = () => { libs[k] = null; rej(new Error('the viewer didn’t load')); };
+    document.head.appendChild(s);
+  }));
+  const ICON2 = {
+    close: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    minus: 'M19 13H5v-2h14v2z',
+    tab: 'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+  };
+  let V = null;
+  const iconBtn = (path, label, fn, cls) => { const b = el('button', 'rc-ib' + (cls ? ' ' + cls : '')); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.appendChild(svg(path)); b.addEventListener('click', fn); return b; };
+  function closeViewer(fromPop) {
+    if (!V) return; const v = V; V = null;
+    v.alive = false; if (v.io) v.io.disconnect(); if (v.pdf) v.pdf.destroy(); if (v.onResize) window.removeEventListener('resize', v.onResize);
+    v.root.querySelectorAll('canvas').forEach((c) => { c.width = 0; c.height = 0; });
+    v.root.remove(); document.documentElement.style.overflow = v.prevOverflow;
+    document.removeEventListener('keydown', v.onKey); window.removeEventListener('popstate', v.onPop);
+    const refocus = () => { if (Math.abs(window.scrollY - v.sy) > 1) window.scrollTo(0, v.sy); if (v.opener && v.opener.isConnected) v.opener.focus({ preventScroll: true }); };
+    if (!fromPop && history.state && history.state.rcViewer) { window.addEventListener('popstate', () => setTimeout(refocus, 0), { once: true }); history.back(); }
+    refocus(); if (fromPop) setTimeout(refocus, 0);
   }
+  async function view(d, row, btn) {
+    if (V) closeViewer();
+    const host = document.getElementById('bf') || document.body;
+    const root = el('div', 'rc-viewer'); root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', d.title);
+    const panel = el('div', 'rc-vpanel');
+    const head = el('div', 'rc-vhead');
+    const ttl = el('div', 'rc-vttl'); ttl.append(el('div', 'rc-title', d.title), el('div', 'rc-meta', [day(d.doc_date), kind(d), size(d.size_bytes)].filter(Boolean).join(' · ')));
+    const tools = el('div', 'rc-vtools');
+    const zoomBox = el('div', 'rc-zoom'); zoomBox.hidden = true;
+    const zl = el('span', 'rc-zl', '100%');
+    const body = el('div', 'rc-vbody'); body.tabIndex = 0;
+    const v = V = { d, root, body, zoom: 1, alive: true, opener: btn || null, sy: window.scrollY, prevOverflow: document.documentElement.style.overflow };
+    const setZoom = (z) => { v.zoom = Math.min(3, Math.max(0.5, Math.round(z * 4) / 4)); zl.textContent = Math.round(v.zoom * 100) + '%'; if (v.layout) v.layout(); };
+    zoomBox.append(iconBtn(ICON2.minus, 'Zoom out', () => setZoom(v.zoom - 0.25)), zl, iconBtn(ICON2.plus, 'Zoom in', () => setZoom(v.zoom + 0.25)));
+    const msgRow = el('div', 'rc-vmsg');
+    const dl = el('button', 'bf-btn rc-act'); dl.type = 'button'; dl.append(svg(ICON.download), el('span', 'rc-lbl', 'Download')); dl.addEventListener('click', () => download(d, msgRow));
+    const sh = el('button', 'bf-btn rc-act'); sh.type = 'button'; sh.append(svg(ICON.share), el('span', 'rc-lbl', 'Share')); sh.addEventListener('click', () => share(d, msgRow, sh));
+    const nt = iconBtn(ICON2.tab, 'Open in a new tab', async () => { const w = window.open('', '_blank'); try { const u = await dash.vault.url(d.storage_path, { expires: 600 }); if (w) w.location.href = u; } catch (e) { if (w) w.close(); say(msgRow, 'Couldn’t open it: ' + (e.message || e), true); } });
+    const cl = iconBtn(ICON2.close, 'Close', () => closeViewer(), 'rc-close');
+    tools.append(zoomBox, dl, sh, nt, cl);
+    head.append(ttl, tools, msgRow);
+    panel.append(head, body); root.appendChild(panel); host.appendChild(root);
+    root.addEventListener('click', (e) => { if (e.target === root) closeViewer(); });
+    v.onKey = (e) => {
+      if (e.key === 'Tab') { const f = [...panel.querySelectorAll('button:not([hidden]),input,[tabindex="0"]')].filter((x) => x.offsetParent !== null); if (!f.length) return; const first = f[0], last = f[f.length - 1]; if (!panel.contains(document.activeElement)) { e.preventDefault(); first.focus(); } else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } return; }
+      if (e.target && e.target.tagName === 'INPUT') return;
+      if (e.key === 'Escape') { e.preventDefault(); closeViewer(); } else if ((e.key === '+' || e.key === '=') && v.layout) setZoom(v.zoom + 0.25); else if (e.key === '-' && v.layout) setZoom(v.zoom - 0.25); };
+    v.onPop = () => closeViewer(true);
+    document.addEventListener('keydown', v.onKey);
+    try { history.pushState({ rcViewer: 1 }, ''); } catch (e) { /* ignore */ }
+    window.addEventListener('popstate', v.onPop);
+    document.documentElement.style.overflow = 'hidden';
+    cl.focus();
+    body.replaceChildren(el('p', 'rc-vnote', 'Opening…'));
+    try {
+      const url = await dash.vault.url(d.storage_path, { expires: 900 });
+      if (!v.alive) return;
+      const name = d.file_name.toLowerCase();
+      if (name.endsWith('.pdf')) await showPdf(v, url, zoomBox);
+      else if (/\.(png|jpe?g|gif|webp)$/.test(name)) { const img = el('img', 'rc-vimg'); img.alt = d.title; img.src = url; body.replaceChildren(img); }
+      else if (name.endsWith('.csv')) { const txt = await (await fetch(url)).text(); if (v.alive) body.replaceChildren(csvTable(txt)); }
+      else if (name.endsWith('.xlsx')) await showXlsx(v, url);
+      else body.replaceChildren(el('p', 'rc-vnote', 'This kind of file can’t be shown here. Use Download.'));
+    } catch (e) { if (v.alive) body.replaceChildren(el('p', 'rc-vnote err', 'Couldn’t show it here (' + (e.message || e) + '). Download still works.')); }
+  }
+  async function showPdf(v, url, zoomBox) {
+    const lib = await need('pdf');
+    const pdf = await lib.getDocument({ url, disableRange: true, disableStream: true }).promise;
+    if (!v.alive) { pdf.destroy(); return; }
+    v.pdf = pdf; zoomBox.hidden = false;
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) pages.push(await pdf.getPage(i));
+    if (!v.alive) return;
+    const wrap = el('div', 'rc-pages');
+    const slots = pages.map((p, i) => { const s = el('div', 'rc-page'); s.dataset.i = i; s.setAttribute('aria-label', 'Page ' + (i + 1) + ' of ' + pages.length); wrap.appendChild(s); return s; });
+    v.body.replaceChildren(wrap);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const draw = async (slot) => {
+      const i = +slot.dataset.i; const key = v.zoom + ':' + slot.clientWidth;
+      if (slot.dataset.drawn === key) return; slot.dataset.drawn = key;
+      const p = pages[i]; const base = p.getViewport({ scale: 1 });
+      let px = (slot.clientWidth / base.width) * dpr;
+      const cap = Math.sqrt(14e6 / (base.width * base.height)); if (px > cap) px = cap; // stay under phone canvas limits
+      const vp = p.getViewport({ scale: px });
+      const c = document.createElement('canvas'); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      try { await p.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; } catch (e) { slot.dataset.drawn = ''; return; }
+      if (v.alive && slot.dataset.drawn === key) { const old = slot.querySelector('canvas'); slot.replaceChildren(c); if (old) { old.width = 0; old.height = 0; } } else { c.width = 0; c.height = 0; }
+    };
+    const drop = (slot) => { const c = slot.querySelector('canvas'); if (c) { c.width = 0; c.height = 0; c.remove(); } slot.dataset.drawn = ''; };
+    v.io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) draw(e.target); else drop(e.target); }), { root: v.body, rootMargin: '1200px 0px' });
+    v.layout = () => {
+      const cs = getComputedStyle(wrap); const avail = Math.max(240, v.body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+      slots.forEach((s, i) => { const b = pages[i].getViewport({ scale: 1 }); const w = Math.round(Math.min(avail, 900) * v.zoom); s.style.width = w + 'px'; s.style.height = Math.round(w * b.height / b.width) + 'px'; });
+      slots.forEach((s) => { const r = s.getBoundingClientRect(), br = v.body.getBoundingClientRect(); if (r.bottom > br.top - 800 && r.top < br.bottom + 800) draw(s); });
+    };
+    slots.forEach((s) => v.io.observe(s));
+    v.layout();
+    let rt; v.onResize = () => { clearTimeout(rt); rt = setTimeout(() => v.alive && v.layout(), 150); }; window.addEventListener('resize', v.onResize);
+  }
+  function csvTable(txt) {
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < txt.length; i++) { const ch = txt[i];
+      if (q) { if (ch === '"' && txt[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+      else if (ch === '"') q = true; else if (ch === ',') { row.push(cell); cell = ''; } else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; } else if (ch !== '\r') cell += ch; }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    const w = el('div', 'rc-vsheet'); w.appendChild(csvTableFromRows(rows)); return w;
+  }
+  async function showXlsx(v, url) {
+    const X = await need('xlsx');
+    const wb = X.read(await (await fetch(url)).arrayBuffer(), { type: 'array' });
+    if (!v.alive) return;
+    const out = el('div', 'rc-vsheetwrap'); const seg = el('div', 'bf-seg'); const box = el('div', 'rc-vsheet');
+    const show = (n) => { seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.textContent === n ? 'true' : 'false')); const rows = X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }); box.replaceChildren(csvTableFromRows(rows)); };
+    wb.SheetNames.forEach((n) => { const b = el('button', null, n); b.type = 'button'; b.addEventListener('click', () => show(n)); seg.appendChild(b); });
+    if (wb.SheetNames.length > 1) out.appendChild(seg);
+    out.appendChild(box); v.body.replaceChildren(out); show(wb.SheetNames[0]);
+  }
+  function csvTableFromRows(rows) {
+    const NUM = /^[-+\u2212$(]*[\d,]+(\.\d+)?\)?%?$/;
+    const keep = rows.map((r) => r.map((c) => String(c == null ? '' : c))).filter((r) => r.some((c) => c.trim()));
+    const cols = Math.max(0, ...keep.map((r) => r.length));
+    const isNum = Array.from({ length: cols }, (_, j) => { const vals = keep.slice(1).map((r) => (r[j] || '').trim()).filter(Boolean); return vals.length > 0 && vals.filter((c) => NUM.test(c)).length / vals.length >= 0.8; });
+    const t = el('table', 'bf-table rc-vtable'); const th = el('thead'); const tb = el('tbody');
+    keep.forEach((r, i) => { const tr = el('tr'); for (let j = 0; j < cols; j++) tr.appendChild(el(i === 0 ? 'th' : 'td', isNum[j] ? 'num' : null, r[j] || '')); (i === 0 ? th : tb).appendChild(tr); });
+    t.append(th, tb); return t;
+  }
+
   async function download(d, row) {
     try { const u = await dash.vault.url(d.storage_path, { expires: 120, download: d.file_name }); const a = el('a'); a.href = u; a.rel = 'noopener'; a.download = d.file_name; document.body.appendChild(a); a.click(); a.remove(); say(row, 'Downloading ' + d.file_name); }
     catch (e) { say(row, 'Couldn’t download it: ' + (e.message || e), true); }
