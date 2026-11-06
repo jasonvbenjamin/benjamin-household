@@ -976,8 +976,8 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const tb = card.querySelector('.mv-table tbody');
     tb.replaceChildren(...rows.map((r) => {
       const trr = el('tr'); const k = mvKind(r);
-      const what = el('td', null, r.name.replace(/ \(move ballpark\)/, ''));
-      const chip = el('span', 'bf-chip' + (k === 'back' ? ' ok' : r.is_estimate ? '' : ' info'), k === 'back' ? 'Coming back' : r.is_estimate ? 'Ballpark' : 'Set'); if (r.note) chip.title = r.note;
+      const what = el('td', null, r.name.replace(/ \((move ballpark|quote)\)/, ''));
+      const isQuote = /\(quote\)/.test(r.name); const chip = el('span', 'bf-chip' + (k === 'back' ? ' ok' : isQuote ? ' warn' : r.is_estimate ? '' : ' info'), k === 'back' ? 'Coming back' : isQuote ? 'Quote' : r.is_estimate ? 'Ballpark' : 'Set'); if (r.note) chip.title = r.note;
       const cc = el('td'); cc.appendChild(chip);
       trr.append(el('td', 'datec', r.anchor_date ? short(toD(r.anchor_date)) : ''), what, el('td', 'num' + (r.amount > 0 ? ' bf-pos' : ''), signed(r.amount)), cc);
       return trr;
@@ -1009,7 +1009,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
         const [mx, my] = d3.pointer(evt, box); const at = x.invert(d3.pointer(evt, svg.node())[0]);
         const p = pts.filter((q) => q.d <= at).pop() || pts[0];
         const same = ev.filter((e) => e.d.toDateString() === at.toDateString());
-        BF.tipRows(tip, at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), [['var(--g-s1)', 'Checking', cash(p.c)], ['var(--g-s2)', 'Checking + savings', cash(p.t)], ...same.map((e) => [e.amount > 0 ? 'var(--gc-wages)' : 'var(--g-text-2)', e.name.replace(/ \(move ballpark\)/, ''), signed(e.amount)])]);
+        BF.tipRows(tip, at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), [['var(--g-s1)', 'Checking', cash(p.c)], ['var(--g-s2)', 'Checking + savings', cash(p.t)], ...same.map((e) => [e.amount > 0 ? 'var(--gc-wages)' : 'var(--g-text-2)', e.name.replace(/ \((move ballpark|quote)\)/, ''), signed(e.amount)])]);
         BF.placeTip(box, tip, mx, my);
       })
       .on('mouseleave', () => { tip.hidden = true; });
