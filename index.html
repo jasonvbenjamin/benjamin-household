@@ -961,6 +961,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const card = $('move-card'); if (!card) return;
     const sched = ok('schedule'), accts = ok('accounts');
     if (!sched || !accts) return;
+    card.hidden = !sched.some((r) => r.tag === 'move'); if (card.hidden) return;
     const chk = accts.find((a) => a.name === 'Chase checking'), sav = accts.find((a) => a.name === 'Chase savings'), bofa = accts.find((a) => /Bank of America/.test(a.name));
     if (!chk || chk.balance == null) return;
     const from = toD(chk.as_of), today = new Date(); today.setHours(12, 0, 0, 0);
