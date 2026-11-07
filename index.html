@@ -964,16 +964,37 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const chk = accts.find((a) => a.name === 'Chase checking'), sav = accts.find((a) => a.name === 'Chase savings'), bofa = accts.find((a) => /Bank of America/.test(a.name));
     if (!chk || chk.balance == null) return;
     const from = toD(chk.as_of), today = new Date(); today.setHours(12, 0, 0, 0);
-    const ev = mvEvents(sched, from, MV_END).map((e) => ({ ...e, acct: 'checking' }));
-    let payoff = null;
-    if (bofa && bofa.balance > 0 && bofa.promo_ends_on) {
-      const pd = new Date(toD(bofa.promo_ends_on).getTime() - 5 * 864e5);
-      if (pd > from && pd <= MV_END) { payoff = { d: pd, amount: -bofa.balance, name: 'Bank of America payoff, from savings', acct: 'savings' }; ev.push(payoff); ev.sort((a, b) => a.d - b.d || b.amount - a.amount); }
+    const base = mvEvents(sched, from, MV_END);
+    const payD = bofa && bofa.balance > 0 && bofa.promo_ends_on ? new Date(toD(bofa.promo_ends_on).getTime() - 5 * 864e5) : null;
+    const payOn = payD && payD > from && payD <= MV_END ? payD : null;
+    const savBal = Number(sav ? sav.balance : 0);
+    // Plays the plan forward. A move from savings is added when checking would otherwise go below zero,
+    // and the Bank of America payoff comes from savings first, then checking for whatever savings can't cover.
+    const sim = (xf) => {
+      const ev = base.map((e) => ({ ...e }));
+      if (xf) ev.push({ d: xf.d, amount: xf.amount, name: 'Move from savings to checking', kind: 'xfer' });
+      if (payOn) ev.push({ d: payOn, amount: -bofa.balance, name: 'Bank of America payoff', kind: 'payoff' });
+      ev.sort((a, b) => a.d - b.d || b.amount - a.amount);
+      let c = Number(chk.balance), s = savBal;
+      const pts = [{ d: from, c, t: c + s }]; let lowC = pts[0], lowT = pts[0], firstNeg = null;
+      ev.forEach((e) => {
+        if (e.kind === 'xfer') { c += e.amount; s -= e.amount; }
+        else if (e.kind === 'payoff') { e.fromSav = Math.min(Math.max(s, 0), -e.amount); s -= e.fromSav; c += e.amount + e.fromSav; }
+        else c += e.amount;
+        const p = { d: e.d, c, t: c + s, e }; pts.push(p);
+        if (p.c < lowC.c) lowC = p; if (p.t < lowT.t) lowT = p; if (p.c < 0 && !firstNeg) firstNeg = p;
+      });
+      pts.push({ d: MV_END, c, t: c + s });
+      return { ev, pts, lowC, lowT, firstNeg };
+    };
+    let run = sim(null), xfer = null; const short0 = run.lowC.c < 0 ? run.lowC : null, neg0 = run.firstNeg;
+    if (short0 && savBal > 0) {
+      let d = new Date(run.firstNeg.d.getTime() - 3 * 864e5); if (d <= from) d = new Date(from.getTime() + 864e5);
+      xfer = { d, amount: Math.min(Math.ceil((-short0.c + 500) / 500) * 500, Math.floor(savBal)) };
+      run = sim(xfer);
     }
-    let c = Number(chk.balance), s = Number(sav ? sav.balance : 0);
-    const pts = [{ d: from, c, t: c + s }]; let lowC = pts[0], lowT = pts[0];
-    ev.forEach((e) => { if (e.acct === 'savings') s += e.amount; else c += e.amount; const p = { d: e.d, c, t: c + s, e }; pts.push(p); if (p.c < lowC.c) lowC = p; if (p.t < lowT.t) lowT = p; });
-    pts.push({ d: MV_END, c, t: c + s });
+    const { ev, pts, lowC, lowT } = run;
+    const payoff = ev.find((e) => e.kind === 'payoff') || null;
     // budget
     const rows = sched.filter((r) => r.tag === 'move').sort((a, b) => (a.anchor_date || '').localeCompare(b.anchor_date || ''));
     const sum = (k) => rows.filter((r) => mvKind(r) === k).reduce((x, r) => x + r.amount, 0);
@@ -1012,10 +1033,13 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     card.querySelector('.mv-kpis').replaceChildren(
       kpi('Move costs', money(oneTime), money(oneTime - ballparkAmt) + ' of it quoted or set'),
       kpi('Coming back', money(back), 'Russell and parking deposits'),
-      kpi('Checking at its lowest', cash(lowC.c), short(lowC.d) + (lowC.c < 0 ? ': move money from savings before then' : ''), lowC.c < 0 ? 'bad' : ''),
-      kpi('With savings, lowest', cash(lowT.t), short(lowT.d) + (payoff && lowT.d >= payoff.d ? ', after paying off Bank of America' : ''), lowT.t < 2000 ? 'bad' : ''),
+      xfer
+        ? kpi('Move from savings', money(xfer.amount), `By ${short(xfer.d)}, ahead of the ${short(neg0.d)} move costs. Checking then stays above ${money(Math.floor(lowC.c / 100) * 100)}.` + (lowC.c < 0 ? ' Savings alone can’t cover it.' : ''), lowC.c < 0 ? 'bad' : '')
+        : kpi('Checking at its lowest', cash(lowC.c), short(lowC.d), lowC.c < 0 ? 'bad' : ''),
+      kpi('All cash at its lowest', cash(lowT.t), 'Checking + savings, ' + short(lowT.d) + (payoff && lowT.d >= payoff.d ? ', after paying off Bank of America' : ''), lowT.t < 2000 ? 'bad' : ''),
     );
-    card.querySelector('.mv-bofa').textContent = bofa && bofa.balance > 0 ? `Bank of America: ${money(bofa.balance)} at 0% until ${day(bofa.promo_ends_on)}, then ${(bofa.apr * 100).toFixed(2)}%. The chart pays it off from savings on ${short(payoff ? payoff.d : toD(bofa.promo_ends_on))}. Decide in late January, once the move is paid: pay it off, or move it to a card you already have.` : '';
+    const payText = !payoff ? `on ${short(toD(bofa ? bofa.promo_ends_on : chk.as_of))}` : payoff.fromSav >= -payoff.amount - 0.5 ? `from savings on ${short(payoff.d)}` : `on ${short(payoff.d)}, ${money(Math.round(payoff.fromSav))} from savings and ${money(Math.round(-payoff.amount) - Math.round(payoff.fromSav))} from checking, since ${xfer ? money(xfer.amount) + ' of savings goes to the move' : 'savings can’t cover all of it'}`;
+    card.querySelector('.mv-bofa').textContent = bofa && bofa.balance > 0 ? `Bank of America: ${money(bofa.balance)} at 0% until ${day(bofa.promo_ends_on)}, then ${(bofa.apr * 100).toFixed(2)}%. The chart pays it off ${payText}. Decide in late January, once the move is paid: pay it off, or move it to a card you already have.` : '';
     const tb = card.querySelector('.mv-table tbody');
     tb.replaceChildren(...rows.map((r) => {
       const trr = el('tr'); const k = mvKind(r);
@@ -1038,6 +1062,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     svg.append('path').datum(pts).attr('d', line('t')).attr('fill', 'none').attr('stroke', 'var(--g-s2)').attr('stroke-width', 2.25);
     svg.append('path').datum(pts).attr('d', line('c')).attr('fill', 'none').attr('stroke', 'var(--g-s1)').attr('stroke-width', 2.25);
     if (today > from && today < MV_END) svg.append('line').attr('x1', x(today)).attr('x2', x(today)).attr('y1', 10).attr('y2', H - B).attr('stroke', 'var(--g-text-2)').attr('stroke-dasharray', '3 3');
+    if (xfer) { const xr = x(xfer.d) > W - 200; svg.append('line').attr('x1', x(xfer.d)).attr('x2', x(xfer.d)).attr('y1', 12).attr('y2', H - B).attr('stroke', 'var(--g-outline-strong)'); svg.append('text').attr('class', 'lbl-halo').attr('x', x(xfer.d) + (xr ? -4 : 4)).attr('y', 24).attr('text-anchor', xr ? 'end' : 'start').attr('font-size', 11).attr('fill', 'var(--g-text-2)').text(money(xfer.amount) + ' from savings'); }
     if (payoff) { svg.append('line').attr('x1', x(payoff.d)).attr('x2', x(payoff.d)).attr('y1', 12).attr('y2', H - B).attr('stroke', 'var(--g-outline-strong)'); const pr = x(payoff.d) > W - 160; svg.append('text').attr('class', 'lbl-halo').attr('x', x(payoff.d) + (pr ? -4 : 4)).attr('y', 24).attr('text-anchor', pr ? 'end' : 'start').attr('font-size', 11).attr('fill', 'var(--g-text-2)').text('Bank of America paid off'); }
     const mark = (p, k, color, label, below) => {
       svg.append('circle').attr('cx', x(p.d)).attr('cy', y(p[k])).attr('r', 4.5).attr('fill', color).attr('stroke', 'var(--g-card)').attr('stroke-width', 2);
@@ -1045,7 +1070,7 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
       svg.append('text').attr('class', 'lbl-halo').attr('x', x(p.d) + (right ? -8 : 8)).attr('y', y(p[k]) + (below && y(p[k]) + 16 < H - B - 14 ? 16 : -10)).attr('text-anchor', right ? 'end' : 'start').attr('font-size', 12).attr('font-weight', 500).attr('fill', p[k] < 0 ? 'var(--g-error)' : 'var(--g-text)').text(label + ' ' + cash(p[k]) + ' · ' + short(p.d));
     };
     mark(lowC, 'c', lowC.c < 0 ? 'var(--g-error)' : 'var(--g-s1)', 'Checking low', true);
-    if (lowT !== lowC) mark(lowT, 't', 'var(--g-s2)', 'With savings', false);
+    if (lowT !== lowC) mark(lowT, 't', 'var(--g-s2)', 'All cash low', false);
     const tip = BF.tip(box);
     svg.append('rect').attr('x', left).attr('width', W - left).attr('y', 0).attr('height', H - B).attr('fill', 'transparent')
       .on('mousemove', (evt) => {
