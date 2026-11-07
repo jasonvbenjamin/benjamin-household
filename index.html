@@ -490,6 +490,19 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
 #move-card .bf-cardhead{min-width:0}
 #move-card .mv-kpis{grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5rem),1fr))}
 @media(max-width:700px){#move-card .mv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#move-card .mv-kpis .v{font-size:22px;line-height:28px}}
+#move-card .mv-split{display:grid;margin:8px 0 16px}
+#move-card .mv-splith{margin:0 0 4px;font:500 14px/20px var(--g-font);color:var(--g-text)}
+#move-card .mv-srow{display:grid;grid-template-columns:minmax(12rem,18rem) minmax(0,1fr) 6.5rem;gap:4px 16px;align-items:center;padding:8px 0;border-top:1px solid var(--g-grid)}
+#move-card .mv-splith+.mv-srow{border-top:0}
+#move-card .mv-slab{display:grid;gap:2px;min-width:0}
+#move-card .mv-sname{font-size:14px;line-height:20px;color:var(--g-text)}
+#move-card .mv-swhat{font-size:12px;line-height:16px;color:var(--g-text-2)}
+#move-card .mv-sbar{height:8px;border-radius:4px;background:var(--g-surface-2);overflow:hidden}
+#move-card .mv-sbar span{display:block;height:100%;border-radius:4px;background:var(--g-s1)}
+#move-card .mv-sbar span.mix{opacity:.7}
+#move-card .mv-sbar span.est{opacity:.45}
+#move-card .mv-samt{text-align:right;font-family:var(--g-num);font-variant-numeric:tabular-nums;font-size:14px;color:var(--g-text)}
+@media(max-width:700px){#move-card .mv-srow{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"lab amt" "bar bar"}#move-card .mv-slab{grid-area:lab}#move-card .mv-sbar{grid-area:bar}#move-card .mv-samt{grid-area:amt}}
 </style>
 <script>
 (() => {
@@ -934,13 +947,14 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     const h = el('div'); h.append(el('span', 'bf-eyebrow', 'Through March'), el('h3', null, 'Chicago move'), el('span', 'bf-note mv-note', ''));
     head.appendChild(h);
     const kp = el('div', 'bf-kpis rc-kpis mv-kpis');
+    const split = el('div', 'mv-split'); split.setAttribute('role', 'list'); split.setAttribute('aria-label', 'Where the move money goes');
     const chart = el('div', 'bf-chart mv-chart'); chart.style.minHeight = '240px';
     const legend = el('div', 'mv-legend');
     const tw = el('div', 'bf-tablewrap short'); const t = el('table', 'bf-table mv-table');
     const th = el('thead'); const tr = el('tr'); [['Date', 'datec'], ['What', null], ['Amount', 'num'], ['', null]].forEach(([x, c]) => tr.appendChild(el('th', c, x))); th.appendChild(tr);
     t.append(th, el('tbody')); tw.appendChild(t);
     const bofa = el('p', 'bf-note mv-bofa', '');
-    card.append(head, kp, chart, legend, bofa, tw);
+    card.append(head, kp, split, chart, legend, bofa, tw);
     fc.parentNode.insertBefore(card, fc.nextSibling);
   }
   function renderMove() {
@@ -963,11 +977,40 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     // budget
     const rows = sched.filter((r) => r.tag === 'move').sort((a, b) => (a.anchor_date || '').localeCompare(b.anchor_date || ''));
     const sum = (k) => rows.filter((r) => mvKind(r) === k).reduce((x, r) => x + r.amount, 0);
-    const oneTime = -sum('move'), back = sum('back'), ballpark = rows.filter((r) => r.is_estimate && mvKind(r) === 'move').length;
-    card.querySelector('.mv-note').textContent = 'Ballpark until the quotes come back' + (ballpark ? ` (${ballpark} lines still estimated)` : '') + '. Starts from the ' + day(chk.as_of) + ' balances of checking and savings and plays every bill, paycheck and move cost forward to March 31.';
+    const oneTime = -sum('move'), back = sum('back');
+    const isQ = (r) => /\(quote\)/.test(r.name);
+    const moveRows = rows.filter((r) => mvKind(r) === 'move');
+    const ballparkAmt = -moveRows.filter((r) => r.is_estimate && !isQ(r)).reduce((x, r) => x + r.amount, 0);
+    const quoted = moveRows.some(isQ);
+    card.querySelector('.mv-note').textContent = (quoted ? `Movers and car shipping are from the quotes; ${money(ballparkAmt)} of the ${money(oneTime)} is still ballpark, marked in the table. ` : 'Ballpark until the quotes come back. ') + 'Starts from the ' + day(chk.as_of) + ' balances of checking and savings and plays every bill, paycheck and move cost forward to March 31. Not counted yet: the higher Illinois take-home once payroll switches.';
     const kpi = (l, v, sub, cls) => { const k = el('div', 'bf-kpi rc-kpi' + (cls ? ' ' + cls : '')); k.append(el('span', 'l', l), el('span', 'v', v)); if (sub) k.appendChild(el('span', 's', sub)); return k; };
+    // where it goes
+    const GROUPS = [
+      ['Movers', (r) => /^Movers/.test(r.name)],
+      ['Shipping the car', (r) => /^Ship the car/.test(r.name)],
+      ['Chicago lease up front', (r) => /^Chicago (lease|rent, Dec)/.test(r.name)],
+      ['Getting there', (r) => /^(Flights|Float)/.test(r.name)],
+      ['Settling in', () => true],
+    ];
+    const SHORT = [[/^Movers deposit/, '10% deposit'], [/^Movers, full pack/, 'balance at pickup'], [/^Ship the car/, 'open transport'], [/^Chicago lease deposit/, 'deposit'], [/^Chicago rent, Dec/, 'Dec 15–31 rent'], [/^Flights/, 'flights'], [/^Float week/, 'float week'], [/^Chicago move-in/, 'move-in'], [/^TVs/, 'TVs'], [/^Illinois/, 'Illinois fees']];
+    const grp = GROUPS.map(([label]) => ({ label, rows: [] }));
+    moveRows.forEach((r) => { grp[GROUPS.findIndex(([, f]) => f(r))].rows.push(r); });
+    const groups = grp.filter((g) => g.rows.length).map((g) => {
+      const amt = -g.rows.reduce((x, r) => x + r.amount, 0);
+      const q = g.rows.every(isQ), bp = g.rows.every((r) => r.is_estimate && !isQ(r)), set = g.rows.every((r) => !r.is_estimate && !isQ(r));
+      const what = g.rows.map((r) => { const s = SHORT.find(([re]) => re.test(r.name)); return s ? s[1] : r.name.replace(/ \((move ballpark|quote)\)/, ''); });
+      return { ...g, amt, status: q ? 'Quoted' : bp ? 'Ballpark' : set ? 'Set' : 'Partly ballpark', what };
+    }).sort((a, b) => b.amt - a.amt);
+    const max = d3.max(groups, (g) => g.amt) || 1;
+    card.querySelector('.mv-split').replaceChildren(el('h4', 'mv-splith', 'Where the ' + money(oneTime) + ' goes'), ...groups.map((g) => {
+      const row = el('div', 'mv-srow'); row.setAttribute('role', 'listitem');
+      const lab = el('div', 'mv-slab'); lab.append(el('span', 'mv-sname', g.label), el('span', 'mv-swhat', g.status + ' · ' + g.what.join(' + ')));
+      const bar = el('div', 'mv-sbar'); const fill = el('span', g.status === 'Ballpark' ? 'est' : g.status === 'Partly ballpark' ? 'mix' : ''); fill.style.width = (g.amt / max * 100).toFixed(1) + '%'; bar.appendChild(fill);
+      row.append(lab, bar, el('span', 'mv-samt', money(g.amt)));
+      return row;
+    }));
     card.querySelector('.mv-kpis').replaceChildren(
-      kpi('Move costs', money(oneTime), 'Deposit, half month, movers, car, travel, move-in'),
+      kpi('Move costs', money(oneTime), money(oneTime - ballparkAmt) + ' of it quoted or set'),
       kpi('Coming back', money(back), 'Russell and parking deposits'),
       kpi('Checking at its lowest', cash(lowC.c), short(lowC.d) + (lowC.c < 0 ? ': move money from savings before then' : ''), lowC.c < 0 ? 'bad' : ''),
       kpi('With savings, lowest', cash(lowT.t), short(lowT.d) + (payoff && lowT.d >= payoff.d ? ', after paying off Bank of America' : ''), lowT.t < 2000 ? 'bad' : ''),
