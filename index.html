@@ -37,6 +37,18 @@ body { font: 14px/1.4 "Google Sans BF", "Roboto BF", Roboto, system-ui, -apple-s
 .gate button { appearance: none; border: 0; border-radius: 999px; background: #1A73E8; color: #fff; font: 500 16px/24px "Google Sans BF", system-ui, sans-serif; padding: 12px 20px; cursor: pointer; }
 .gate button.link { background: none; color: #1A73E8; padding: 4px 0; justify-self: start; }
 .gate button[disabled] { opacity: .6; cursor: default; }
+.pw-dialog { border: 0; border-radius: 28px; padding: 24px; width: min(400px, calc(100vw - 32px)); box-sizing: border-box; background: var(--g-card, #fff); color: var(--g-text, #1f1f1f); box-shadow: 0 8px 12px 6px rgba(0,0,0,.15), 0 4px 4px rgba(0,0,0,.3); }
+.pw-dialog::backdrop { background: rgba(0,0,0,.4); }
+.pw-dialog form { display: grid; gap: 16px; }
+.pw-dialog h2 { margin: 0; font: 400 24px/32px "Google Sans BF", system-ui, sans-serif; }
+.pw-dialog p { margin: 0; font-size: 14px; line-height: 20px; color: var(--g-text-2, #5f6368); }
+.pw-dialog label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--g-text-2, #5f6368); }
+.pw-dialog input { font: 400 16px/24px system-ui, sans-serif; color: inherit; background: transparent; border: 1px solid var(--g-outline-strong, #747775); border-radius: 8px; padding: 12px 14px; outline: none; }
+.pw-dialog input:focus { border-color: var(--g-primary, #1a73e8); box-shadow: 0 0 0 1px var(--g-primary, #1a73e8); }
+.pw-dialog .pw-msg.err { color: var(--g-error, #d93025); } .pw-dialog .pw-msg.ok { color: var(--g-success, #188038); }
+.pw-dialog .pw-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.pw-dialog .bf-btn { margin: 0; } .pw-dialog .bf-btn.text { padding: 10px 12px; border: 0; background: none; }
+.bf-hhbar { flex-wrap: wrap; } .bf-hhbar .bf-btn.text { border: 0; background: none; padding: 8px 10px; white-space: nowrap; } .bf-hhbar .bf-btn.text:hover { background: var(--g-hover); } .pw-dialog .bf-btn.filled { background: var(--g-primary, #1a73e8); color: var(--g-on-primary, #fff); border-color: transparent; padding: 10px 24px; } .pw-dialog .bf-btn[disabled] { opacity: .6; }
 .gate .msg { font-size: 14px; } .gate .msg.err { color: #D93025; } .gate .msg.ok { color: #188038; }
 .gate .loading { display: flex; gap: 10px; align-items: center; color: var(--color-fg-muted); }
 .gate .dot { width: 10px; height: 10px; border-radius: 50%; background: #1A73E8; animation: pulse 1s ease-in-out infinite alternate; }
@@ -1104,9 +1116,12 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
   const showGate = (note, isErr) => {
     gate.hidden = false; root.hidden = true;
     const card = el('div', { class: 'card' });
-    card.append(el('div', { class: 'logo' }, 'B'), el('h1', null, 'Benjamin household'), el('p', null, 'Sign in with your email and we’ll send you a code. No password needed.'));
+    card.append(el('div', { class: 'logo' }, 'B'), el('h1', null, 'Benjamin household'), el('p', null, 'Sign in with your email and password.'));
     const lab = el('label', null, 'Email'); const inp = el('input', { type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'you@example.com', required: '' }); lab.appendChild(inp);
-    const btn = el('button', { type: 'button' }, 'Send code');
+    const plab = el('label', null, 'Password'); const pw = el('input', { type: 'password', autocomplete: 'current-password' }); plab.appendChild(pw);
+    const pbtn = el('button', { type: 'button' }, 'Sign in');
+    const alt = el('button', { type: 'button', class: 'link' }, 'Email me a code instead');
+    const btn = el('button', { type: 'button', class: 'link' }, 'Send a new code'); btn.style.display = 'none';
     const msg = el('p', { class: 'msg' + (isErr ? ' err' : '') }, note || '');
     const codeWrap = el('div'); codeWrap.style.display = 'none'; codeWrap.style.gap = '12px'; codeWrap.style.gridTemplateColumns = '1fr';
     const clab = el('label', null, 'Code from the email'); const code = el('input', { inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '10', placeholder: '123456' }); clab.appendChild(code);
@@ -1118,16 +1133,27 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
       btn.disabled = false;
       if (error) { msg.className = 'msg err'; msg.textContent = /private|Database error/i.test(error.message) ? 'That email isn’t on the household list.' : /rate|seconds/i.test(error.message) ? 'Too many tries. Wait a minute and try again.' : error.message; return; }
       msg.className = 'msg ok'; msg.textContent = 'Check your email for the code. Its link works too, on this device.';
-      codeWrap.style.display = 'grid'; btn.textContent = 'Send a new code'; setTimeout(() => code.focus(), 50);
+      codeWrap.style.display = 'grid'; alt.style.display = 'none'; btn.style.display = ''; setTimeout(() => code.focus(), 50);
     };
-    btn.addEventListener('click', send); inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+    const signIn = async () => {
+      const email = inp.value.trim().toLowerCase(); if (!email || !email.includes('@')) { msg.className = 'msg err'; msg.textContent = 'Enter your email address.'; return; }
+      if (!pw.value) { msg.className = 'msg err'; msg.textContent = 'Enter your password.'; pw.focus(); return; }
+      pbtn.disabled = true; msg.className = 'msg'; msg.textContent = 'Signing in…';
+      const { error } = await sb.auth.signInWithPassword({ email, password: pw.value });
+      pbtn.disabled = false;
+      if (error) { msg.className = 'msg err'; msg.textContent = /invalid/i.test(error.message) ? 'That email and password don’t match. No password yet? Email yourself a code, then set one with the Password button.' : /rate|seconds/i.test(error.message) ? 'Too many tries. Wait a minute and try again.' : error.message; return; }
+      msg.textContent = '';
+    };
+    pbtn.addEventListener('click', signIn); pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') signIn(); });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') pw.focus(); });
+    alt.addEventListener('click', send); btn.addEventListener('click', send);
     const verify = async () => {
       const t = code.value.replace(/\D/g, ''); if (t.length < 6) return;
       cbtn.disabled = true; const { error } = await sb.auth.verifyOtp({ email: inp.value.trim().toLowerCase(), token: t, type: 'email' }); cbtn.disabled = false;
       if (error) { msg.className = 'msg err'; msg.textContent = 'That code didn’t work. Use the code from the newest email.'; }
     };
     cbtn.addEventListener('click', verify); code.addEventListener('keydown', (e) => { if (e.key === 'Enter') verify(); });
-    card.append(lab, btn, msg, codeWrap);
+    card.append(lab, plab, pbtn, msg, alt, codeWrap, btn);
     gate.replaceChildren(card);
     setTimeout(() => inp.focus(), 50);
   };
@@ -1191,9 +1217,34 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
     load(DATASETS);
     sb.channel('household-docs').on('postgres_changes', { event: '*', schema: 'public', table: 'household_docs' }, (p) => { const r = p.new; if (r && r.path) (subs[r.path] || []).forEach((f) => f(snap(r.doc))); }).subscribe();
     // a sign-out button beside "Your household"
-    const addOut = () => { const bar = document.querySelector('.bf-hhbar'); if (!bar) return setTimeout(addOut, 200); const b = el('button', { type: 'button', class: 'bf-btn text' }, 'Sign out'); b.addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); }); bar.appendChild(b); };
+    const addOut = () => { const bar = document.querySelector('.bf-hhbar'); if (!bar) return setTimeout(addOut, 200); const b = el('button', { type: 'button', class: 'bf-btn text' }, 'Sign out'); b.addEventListener('click', async () => { await sb.auth.signOut(); location.reload(); }); const pwb = el('button', { type: 'button', class: 'bf-btn text' }, 'Password'); pwb.addEventListener('click', () => pwDialog(session)); bar.append(pwb, b); };
     addOut();
     setInterval(() => { if (document.visibilityState === 'visible') load(DATASETS); }, 10 * 60 * 1000);
+  };
+  const pwDialog = (session) => {
+    let d = document.getElementById('pw-dialog'); if (d) d.remove();
+    d = el('dialog', { id: 'pw-dialog', class: 'pw-dialog', 'aria-labelledby': 'pw-title' });
+    const f = el('form', { method: 'dialog' });
+    const user = el('input', { type: 'email', autocomplete: 'username', value: (session && session.user && session.user.email) || '', hidden: '' });
+    const l1 = el('label', null, 'New password'); const p1 = el('input', { type: 'password', autocomplete: 'new-password' }); l1.appendChild(p1);
+    const l2 = el('label', null, 'Type it again'); const p2 = el('input', { type: 'password', autocomplete: 'new-password' }); l2.appendChild(p2);
+    const m = el('p', { class: 'pw-msg', 'aria-live': 'polite' }, 'At least 10 characters. A password manager can make and save one for you.');
+    const acts = el('div', { class: 'pw-acts' }); const cancel = el('button', { type: 'button', class: 'bf-btn text' }, 'Cancel'); const save = el('button', { type: 'submit', class: 'bf-btn filled' }, 'Save password'); acts.append(cancel, save);
+    f.append(el('h2', { id: 'pw-title' }, 'Set your password'), el('p', null, 'Sign in with your email and this password in any browser. The emailed code still works as a backup.'), user, l1, l2, m, acts);
+    d.appendChild(f); (document.getElementById('bf') || document.body).appendChild(d);
+    cancel.addEventListener('click', () => d.close());
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (p1.value.length < 10) { m.className = 'pw-msg err'; m.textContent = 'Use at least 10 characters.'; p1.focus(); return; }
+      if (p1.value !== p2.value) { m.className = 'pw-msg err'; m.textContent = 'Those don’t match. Type it again.'; p2.focus(); return; }
+      save.disabled = true; m.className = 'pw-msg'; m.textContent = 'Saving…';
+      const { error } = await sb.auth.updateUser({ password: p1.value });
+      save.disabled = false;
+      if (error) { m.className = 'pw-msg err'; m.textContent = error.message; return; }
+      m.className = 'pw-msg ok'; m.textContent = 'Saved. Use your email and this password to sign in anywhere.';
+      p1.value = ''; p2.value = ''; save.style.display = 'none'; cancel.textContent = 'Done';
+    });
+    d.showModal(); setTimeout(() => p1.focus(), 50);
   };
   const check = async (session) => {
     const { error } = await sb.rpc('app_dataset', { p_id: 'summary' });
