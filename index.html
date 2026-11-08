@@ -1104,12 +1104,12 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
   const showGate = (note, isErr) => {
     gate.hidden = false; root.hidden = true;
     const card = el('div', { class: 'card' });
-    card.append(el('div', { class: 'logo' }, 'B'), el('h1', null, 'Benjamin household'), el('p', null, 'Sign in with your email and we’ll send you a link. No password needed.'));
+    card.append(el('div', { class: 'logo' }, 'B'), el('h1', null, 'Benjamin household'), el('p', null, 'Sign in with your email and we’ll send you a code. No password needed.'));
     const lab = el('label', null, 'Email'); const inp = el('input', { type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'you@example.com', required: '' }); lab.appendChild(inp);
-    const btn = el('button', { type: 'button' }, 'Send sign-in link');
+    const btn = el('button', { type: 'button' }, 'Send code');
     const msg = el('p', { class: 'msg' + (isErr ? ' err' : '') }, note || '');
     const codeWrap = el('div'); codeWrap.style.display = 'none'; codeWrap.style.gap = '12px'; codeWrap.style.gridTemplateColumns = '1fr';
-    const clab = el('label', null, 'Or type the code from the email'); const code = el('input', { inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '8', placeholder: '123456' }); clab.appendChild(code);
+    const clab = el('label', null, 'Code from the email'); const code = el('input', { inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '10', placeholder: '123456' }); clab.appendChild(code);
     const cbtn = el('button', { type: 'button' }, 'Sign in with code'); codeWrap.append(clab, cbtn);
     const send = async () => {
       const email = inp.value.trim().toLowerCase(); if (!email || !email.includes('@')) { msg.className = 'msg err'; msg.textContent = 'Enter your email address.'; return; }
@@ -1117,15 +1117,16 @@ textarea.rc-link{font:13px/18px var(--g-num);resize:vertical}
       const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true } });
       btn.disabled = false;
       if (error) { msg.className = 'msg err'; msg.textContent = /private|Database error/i.test(error.message) ? 'That email isn’t on the household list.' : /rate|seconds/i.test(error.message) ? 'Too many tries. Wait a minute and try again.' : error.message; return; }
-      msg.className = 'msg ok'; msg.textContent = 'Check your email for the sign-in link and open it on this device.';
-      codeWrap.style.display = 'grid'; btn.textContent = 'Send another link';
+      msg.className = 'msg ok'; msg.textContent = 'Check your email for the code. Its link works too, on this device.';
+      codeWrap.style.display = 'grid'; btn.textContent = 'Send a new code'; setTimeout(() => code.focus(), 50);
     };
     btn.addEventListener('click', send); inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-    cbtn.addEventListener('click', async () => {
+    const verify = async () => {
       const t = code.value.replace(/\D/g, ''); if (t.length < 6) return;
       cbtn.disabled = true; const { error } = await sb.auth.verifyOtp({ email: inp.value.trim().toLowerCase(), token: t, type: 'email' }); cbtn.disabled = false;
-      if (error) { msg.className = 'msg err'; msg.textContent = 'That code didn’t work. Use the newest email, or tap its link.'; }
-    });
+      if (error) { msg.className = 'msg err'; msg.textContent = 'That code didn’t work. Use the code from the newest email.'; }
+    };
+    cbtn.addEventListener('click', verify); code.addEventListener('keydown', (e) => { if (e.key === 'Enter') verify(); });
     card.append(lab, btn, msg, codeWrap);
     gate.replaceChildren(card);
     setTimeout(() => inp.focus(), 50);
